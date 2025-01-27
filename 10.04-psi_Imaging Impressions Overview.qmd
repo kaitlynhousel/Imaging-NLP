@@ -15,7 +15,7 @@ editor: visual
 library(tidyverse)
 library(discrim)
 library(tidymodels)
-imaging <- read.csv("S:/Sepsis-ALI/Data Management/MESSI/repository/data/raw/2024/SR8658598 - MESSI Study, IMPRESSION.csv")
+imaging <- read.csv("SR8658598 - MESSI Study, IMPRESSION.csv")
 
 
 ```
@@ -45,8 +45,8 @@ The string-searching method for defining positive/negative PE/DVT impression rep
 
 ```{r}
 #| warning: false
-time_zero <- readRDS("S:/Sepsis-ALI/Data Management/MESSI/repository/analytic files/2023/messi_demographic_time_zero_230815")
-enroll_key <- readRDS("S:/Sepsis-ALI/Data Management/MESSI/repository/analytic files/2023/messi_enroll_key_230815")
+time_zero <- readRDS("messi_demographic_time_zero_230815")
+enroll_key <- readRDS("messi_enroll_key_230815")
 
 names(imaging) <- tolower(names(imaging))
 
