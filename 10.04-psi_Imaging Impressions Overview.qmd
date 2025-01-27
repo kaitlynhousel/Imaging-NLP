@@ -1,0 +1,390 @@
+---
+title: "Imaging Impressions Overview"
+author: "KH"
+format: 
+  html:
+    code-fold: true
+    df-print: paged
+editor: visual
+---
+
+## MESSI Imaging Impressions Data Set
+
+```{r}
+#| echo: false
+library(tidyverse)
+library(discrim)
+library(tidymodels)
+imaging <- read.csv("S:/Sepsis-ALI/Data Management/MESSI/repository/data/raw/2024/SR8658598 - MESSI Study, IMPRESSION.csv")
+
+
+```
+
+```{r}
+head(imaging)
+```
+
+### Date limitations
+
+```{r}
+imaging |> 
+  mutate(ORDER_DATE = ymd_hms(ORDER_DATE)) |> 
+  summarise(min_date = min(ORDER_DATE),
+            max_date = max(ORDER_DATE))
+```
+
+### Regular expression/pattern matching imaging impressions
+
+The string-searching method for defining positive/negative PE/DVT impression report
+
+1.  **Search for 'key terms'**: pulmonary embol, thrombosis, dvt
+2.  **Remove non-acute DVT thrombosis terms**: splenic vein, chronic thrombosis, portal venous, portal vein, basilar artery, transplant artery, cephalic vein, basilic vein, hepatic artery, superficial vein, hepatic vein
+3.  **Prioritize specific negative impression reads and code as 'no clot'**: no evidence for an acute pulmonary embol, no evidence of clinically relevant acute pulmonary embol, not compatible with acute pulmonary embol
+4.  **Second priority specific 'questionable' impression reads or impressions that I was unsure how to code**: questionable subsegmental pulmonary embol, questionable small right lower lobe subsegmental pulmonary embol, low quality examination for diagnosing pulmonary artery embol
+5.  **Finally, code more generic terms positive impression reads as 'yes clot'**: +critical result: pulmonary embol, right upper lobe subsegmental pulmonary embol, acute pulmonary embol
+
+```{r}
+#| warning: false
+time_zero <- readRDS("S:/Sepsis-ALI/Data Management/MESSI/repository/analytic files/2023/messi_demographic_time_zero_230815")
+enroll_key <- readRDS("S:/Sepsis-ALI/Data Management/MESSI/repository/analytic files/2023/messi_enroll_key_230815")
+
+names(imaging) <- tolower(names(imaging))
+
+## Step 1: Grab IDs, CSN and time zero ----
+step1 <- time_zero |> 
+  select(messi_id,
+         time_zero,
+         hospital_admit_date,
+         hospital_discharge_date)
+
+step1_1 <- enroll_key |> 
+  select(messi_id,
+         mrn,
+         csn)
+
+step1_2 <- left_join(step1, step1_1, by = "messi_id") |> 
+  distinct()
+
+thrombosis <- inner_join(imaging, step1_2, by = "messi_id") |> 
+  mutate(hospital_admit_date = ymd_hms(hospital_admit_date),
+         hospital_discharge_date = ymd_hms(hospital_discharge_date),
+         diff = as.numeric(difftime(order_date, hospital_admit_date, units = "days"))) |> 
+  filter(diff >= 0 & diff <= 28 & order_date <= hospital_discharge_date) |> 
+  ## Search for key terms 
+  filter(grepl('pulmonary embol|thrombosis|dvt', impression, ignore.case = TRUE)) |> 
+  ## Filter out common non-acute DVT thrombosis 
+  filter(!grepl('splenic vein|chronic thrombosis|portal venous|portal vein|basilar artery|transplant artery|cephalic vein|basilic vein|hepatic artery|superficial vein|hepatic vein', impression, ignore.case = TRUE)) |> 
+  ## Identify PE/DVT via impression strings 
+  mutate(impression = tolower(impression),
+         clot = case_when(grepl('no evidence for an acute pulmonary embol|no evidence of clinically relevant acute pulmonary embol|not compatible with acute pulmonary embol|no new acute pulmonary embol|no evidence of acute left upper extremity deep venous thrombosis|no definite new or large pulmonary embol|no evidence for an acute pulmonary embol|no central acute pulmonary embol|negative for acute pulmonary embol|chronic left lower lobe segmental pulmonary embol|no new acute pulmonary embol|no evidence for an acute pulmonary embol|no ct evidence of acute pulmonary embol|no new pulmonary embol|no new sites of pulmonary embol|previously seen pulmonary emboli in the left lower lobe has near resolved|no definite intraluminal pulmonary embol|no new pulmonary embol|no evidence of large central pulmonary embol|large central pulmonary embolus is not identified|no acute pulmonary, embol|no convincing evidence of pulmonary embol|no evidence for an acute pulmonary artery embol|low probability for acute pe|no large central or, new pulmonary embol|no acute pulmonary embol|no convincing evidence of acute pulmonary embol|no pulmonary embol|no acute central pulmonary embol|resolved pulmonary embol|no large pulmonary embol|no significant pulmonary embol|no definite pulmonary embol|no acute pulmonary embol|no definite evidence of pulmonary embol|no evidence of central or lobar pulmonary embol|no central or lobar pulmonary embol|no ct evidence of pulmonary embol|no acute pe|pulmonary embolism is excluded|no other pulmonary embol|no evidence of acute occlusive pulmonary embol|without large central pulmonary embol|no evidence of acute lower extremity deep venous thrombosis|no evidence of deep venous or superficial thrombosis|no evidence of acute rightlower extremity deep venous thrombosis|no evidence of acute left lower lower extremity deep venous thrombosis|no gross evidence of dvt|no evidence of acute vein thrombosis|no thrombosis|no gross pulmonary embol|no definite central pulmonary embol|no evidence of acute left  lower extremity deep venous thrombosis|no evidence of acute deep vein thrombosis|no evidence of deep vein thrombosis|no evidence of deep or superficial vein thrombosis|no evidence of venous thrombosis|no ct findings of pulmonary embol|dvt exam negative|no evidence of a large pulmonary embol|no evidence for pulmonary embol|no evidence of aortic dissection or central pulmonary embol|no evidence of acute proximal lle dvt|no evidence of acute right upper extremity deep venous thrombosis|no central, lobar or definite segmental pulmonary embol|no pulmonary embol|no left lower extremity proximal dvt|no evidence of acute right upper extremity deep venous thrombosis|no evidence of acute deep venous thrombosis|no evidence of acute bilateral lower extremity deep venous thrombosis|no evidence of central pulmonary embol|no evidence of vascular thrombosis|no findings of dural venous sinus thrombosis|no definite pulmonary embol|no large central pulmonary embolism seen|does not evaluate for dvt|no evidence of dural venous sinus thrombosis|no evidence of acute bilateral upper extremity deep venous thrombosis|without evidence of thrombosis|no deep venous thrombosis|no acute proximal segmental pulmonary embol|no ct angiographic evidence of pulmonary embol|negative for pulmonary embol|no evidence of acute right or left lower extremity deep venous thrombosis|no evidence of portal venous thrombosis|no evidence of dural venous sinus or deep cerebral venous thrombosi|no central pulmonary embol|no evidence of acute right lower extremity deep venous thrombosis|no pulmonary embol|no acute pulmonary embol|no gross pre-segmental pulmonary embol|no evidence of acute right lower extremity deep venous thrombosis|no evidence of acute pulmonary embol|no evidence of acute left lower extremity deep venous thrombosis|no evidence of pulmonary embol|no definite acute pulmonary embol|no central  pulmonary embol|no findings of acute pulmonary embol', impression) ~ 0,
+                          grepl('questionable subsegmental pulmonary embol|questionable small right lower lobe subsegmental pulmonary embol|low quality examination for diagnosing pulmonary artery embol|nondiagnostic for pulmonary embol|suspicious for acute pulmonary embol|suspicious small pulmonary embol|suspicious for pulmonary embol|may represent pulmonary embol|limits evaluation for pulmonary embol|limited study for evaluation of pulmonary embol|suspicious small pulmonary embol|multiple small right sided pulmonary embol|if there is concern for pulmonary emboli|acute on chronic picture due , to pulmonary embolus|nondiagnostic study for pulmonary embol|recent pulmonary embol|infectious etiology such as septic pulmonary embol|setting of known pulmonary embol|history of right-sided pulmonary embol|setting of parenchymal disease or pulmonary embol|unchanged subacute pulmonary embol|indeterminate pulmonary emboli are not excluded|this study does not evaluate for pulmonary embol|essentially nondiagnostic assessment for peripheral pulmonary embol|previously demonstrated pulmonary embol|in the setting of pulmonary embol|chronic, nonocclusive deep vein thrombosis|detection of pulmonary embolism, limited by respiratory cardiopulmo|sequela of the pulmonary embol|changes of known extensive right-sided dvt|venous thrombosis is a consideration|question of cortical vein thrombosis|mca thrombosis|equivocal for isolated pulmonary embol|low quality examination for evaluation of pulmonary embol|pulmonary embolism versus artifact|known history of pulmonary embol|in the setting of known pulmonary embol|indeterminate pulmonary embol|suspicious for pulmonary embol', impression) ~ 1,
+                          grepl('likely representing pulmonary embol|large proximal bilateral pulmonary embol|subsegmental right and possibly left lower lobe pulmonary embol|segmental left upper lobe pulmonary embol|subsegmental arterial pulmonary embol|nonocclusive multifocal pulmonary embol|subsegmental right upper lobe pulmonary embol|right-sided pulmonary embol|small pulmonary embol|interlobular pulmonary artery embol|new central left pulmonary embol|small, nonocclusive pulmonary embol|pulmonary embolus seen|lingular pulmonary embol|progression of pulmonary embol|multiple pulmonary embol|subsegmental pulmonary embol|pulmonary emboli are noted|acute nonocclusive pulmonary embol|acute/subacute new pulmonary embol|right upper lobe small pulmonary embol|representing multiple pulmonary embol|mild obstructive index pulmonary embol|left lower lobe proximal subsegmental pulmonary embol|acute central and peripheral pulmonary embol|saddle pulmonary embol|acute to subacute segmental left upper lobar pulmonary embol|acute, non-occlusive deep vein thrombosis|acute, occlusive deep vein thrombosis|acute,  non-occlusive deep vein thrombosis|acute,  occlusive deep vein thrombosis|suspected pulmonary embol|acute nonocclusive thrombosis of left axillary vein and one left brachial vein|right upper lobe segmental pulmonary embol|acute left upper extremity deep venous thrombosis|consistent with pulmonary embol|segmental pulmonary embol|favored to reflect deep venous thrombosis|right femoral vein deep venous thrombosis|acute subsegmental pulmonary embol|acute left-sided pulmonary embol|new acute left-sided pulmonary embol|acute bilateral pulmonary embol|in the setting of splenic vein thrombosis|new small subsegmental pulmonary embol|acute right-sided pulmonary embol|new posterior embol|nonocclusive deep venous thrombosis|unchanged portomesenteric vein thrombosis|extensive venous thrombosis|+critical result:  acute deep venous thrombosis|right middle lobe segmental pulmonary embol|right lower lobe pulmonary embol|ultrasound also demonstrating spontaneous thrombosis|thrombosis of the right hepatic vein|+critical result:  pulmonary embol|right upper lobe subsegmental pulmonary embol|multiple sites of nonocclusive thrombus|acute pulmonary embol|complete thrombosis of the ivc|partially occlusive deep venous thrombus|bilateral segmental acute pulmonary embol', impression) ~ 2)) |> 
+  group_by(messi_id) |> 
+  slice_max(clot) |> 
+  mutate(clot_final = case_when(clot == 0 ~ 0,
+                          clot == 1 ~ 8,
+                          clot == 2 ~ 1),
+         clot_final = as.factor(clot_final))
+
+```
+
+Total unique patients with pulmonary embol, thrombosis, dvt 'key words' within 28 days of hospital admission = 762
+
+0 = negative impression report
+
+1 = positive impression report
+
+8 = questionable impression report
+
+```{r}
+summary(thrombosis$clot_final)
+```
+
+Benefits of this simple heuristic categorization compared to an NLP machine learning algorithm include easy to implement, maintain and audit.
+
+### Compare to diagnosis codes
+
+```{r}
+#| echo: false
+dx_codes <- readRDS("S:/Sepsis-ALI/Data Management/MESSI/data requests/Emilio Ramos/thrombosis/data/clotting_dx_v3")
+
+dx_codes_limit <- inner_join(step1, dx_codes, by = "messi_id") |> 
+  mutate(min = ymd_hms('2015-03-21 08:29:00')) |> 
+  filter(hospital_admit_date >= min)
+
+has_vte_codes <- dx_codes_limit |> 
+  filter(vte == 1)
+```
+
+Limit the cohort to only those with with a hospital admit date after '2015-03-21 08:29:00' total = 2921
+
+Have VTE based off of dx codes within time frame = 456 compared to imaging impressions = 106
+
+```{r}
+compare_clots <- full_join(has_vte_codes, thrombosis, by = "messi_id")
+
+head(compare_clots)
+```
+
+## Pleural Effusion Classification Model
+
+Using 1 month of CIRCE imaging impression data that I used a similar regular expression method to categorize the data into pleural effusion yes/no.
+
+```{r}
+library(tidyverse)
+data <- readRDS("S:/Sepsis-ALI/Data Management/MESSI/xx-archive-projects/NLP imaging impressions/pleural_effusion_training_data")
+```
+
+```{r}
+head(data)
+```
+
+## Pre-processing
+
+Removes numbers and punctuation from free text
+
+```{r}
+data_preproc <- data |> 
+  ## remove numbers
+  mutate(impression = str_remove_all(impression, "[:digit:]"),
+         ## remove punctuations
+         impression = str_remove_all(impression, "[[:punct:]]"),
+         effusion_yn = as.factor(effusion_yn))
+```
+
+```{r}
+head(data_preproc$impression)
+```
+
+## Build First Classification Model
+
+```{r}
+library(tidymodels)
+
+set.seed(1234)
+
+data_split <- initial_split(data_preproc, strata = effusion_yn)
+
+data_train <- training(data_split)
+data_test <- testing(data_split)
+```
+
+```{r}
+## dimensions of the two splits 
+dim(data_train)
+```
+
+```{r}
+dim(data_test)
+```
+
+```{r}
+## additional pre-processing 
+data_rec <-
+  recipe(effusion_yn ~ impression, data = data_train)
+```
+
+'Tokenize' impressions into word tokens
+
+```{r}
+library(textrecipes)
+
+data_rec <- data_rec %>%
+  step_tokenize(impression) %>%
+  ## only keep the 1000 most frequent tokens 
+  step_tokenfilter(impression, max_tokens = 1e3) %>%
+  step_tfidf(impression)
+```
+
+```{r}
+data_wf <- workflow() %>%
+  add_recipe(data_rec)
+```
+
+## Null model comparison
+
+```{r}
+set.seed(234)
+data_folds <- vfold_cv(data_train)
+
+data_folds
+```
+
+```{r}
+null_classification <- null_model() %>%
+  set_engine("parsnip") %>%
+  set_mode("classification")
+
+null_rs <- workflow() %>%
+  add_recipe(data_rec) %>%
+  add_model(null_classification) %>%
+  fit_resamples(
+    data_folds
+  )
+```
+
+```{r}
+null_rs %>%
+  collect_metrics()
+```
+
+First shot of evaluation used a Naive Bayes model which was no better than the null model
+
+## Evaluation of lasso classification model
+
+"Least Absolute Shrinkage and Selection Operator"
+
+Lasso regression adds a penalty term to a traditional logistic regression model so it can identify irrelevant or redundant variables
+
+### Tuning lasso hyperparameters
+
+Find the best penalty
+
+```{r}
+tune_spec <- logistic_reg(penalty = tune(), mixture = 1) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+tune_spec
+```
+
+```{r}
+lambda_grid <- grid_regular(penalty(), levels = 30)
+lambda_grid
+```
+
+**V-fold cross validation**: randomly splits the data into V groups of roughly equal size
+
+```{r}
+tune_wf <- workflow() %>%
+  add_recipe(data_rec) %>%
+  add_model(tune_spec)
+
+set.seed(2020)
+tune_rs <- tune_grid(
+  tune_wf,
+  data_folds,
+  grid = lambda_grid,
+  control = control_resamples(save_pred = TRUE)
+)
+
+tune_rs
+```
+
+```{r}
+collect_metrics(tune_rs)
+```
+
+```{r}
+autoplot(tune_rs) +
+  labs(
+    title = "Lasso model performance across regularization penalties",
+    subtitle = "Performance metrics can be used to identity the best penalty"
+  )
+```
+
+```{r}
+tune_rs %>%
+  show_best("roc_auc")
+```
+
+Choose the model with the best ROC AUC within one standard error of the numerically best model
+
+```{r}
+chosen_auc <- tune_rs %>%
+  select_by_one_std_err(metric = "roc_auc", -penalty)
+
+chosen_auc
+```
+
+```{r}
+final_lasso <- finalize_workflow(tune_wf, chosen_auc)
+
+final_lasso
+```
+
+Run model on test data
+
+```{r}
+fitted_lasso <- fit(final_lasso, data_train)
+```
+
+```{r}
+final_fitted <- last_fit(final_lasso, data_split)
+
+collect_metrics(final_fitted)
+```
+
+```{r}
+collect_predictions(final_fitted)  %>%
+  roc_curve(truth = effusion_yn, .pred_TRUE, event_level = "second") %>%
+  autoplot() +
+  labs(
+    color = NULL,
+    title = "ROC curve for Positive PE Report",
+    subtitle = "With final tuned lasso regularized classifier on the test set"
+  )
+```
+
+```{r}
+collect_predictions(final_fitted) %>%
+  conf_mat(truth = effusion_yn, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+
+```{r}
+library(vip)
+
+complaints_imp <- extract_fit_parsnip(final_fitted$.workflow[[1]]) %>%
+  vip::vi(lambda = chosen_auc$penalty)
+
+complaints_imp %>%
+  mutate(
+    Sign = case_when(Sign == "POS" ~ "Positive Imaging Report",
+                     Sign == "NEG" ~ "Negative Imaging Report"),
+    Importance = abs(Importance),
+    Variable = str_remove_all(Variable, "tfidf_consumer_complaint_narrative_"),
+    Variable = str_remove_all(Variable, "textfeature_narrative_copy_")
+  ) %>%
+  group_by(Sign) %>%
+  top_n(20, Importance) %>%
+  ungroup %>%
+  ggplot(aes(x = Importance,
+             y = fct_reorder(Variable, Importance),
+             fill = Sign)) +
+  geom_col(show.legend = FALSE) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap(~Sign, scales = "free") +
+  labs(
+    y = NULL,
+    title = "Variable importance for predicting positive imaging reports for pleural effusion",
+    subtitle = paste0("These features are the most important in predicting/n",
+                      "whether an imaging report is positive or not for pleural effusion")
+  )
+```
+
+**False negatives**: a good amount are initial classification errors on my part
+
+```{r}
+data_bind <- collect_predictions(final_fitted) %>%
+  bind_cols(data_test %>% select(-effusion_yn))
+
+data_bind %>%
+  filter(effusion_yn == "TRUE", .pred_TRUE < 0.2) %>%
+  select(impression) %>%
+  slice_sample(n = 10)
+```
+
+False positives
+
+```{r}
+data_bind %>%
+  filter(effusion_yn == "FALSE", .pred_FALSE < 0.2) %>%
+  select(impression) %>%
+  slice_sample(n = 10)
+```
+
+```{r}
+## Save model to use for later 
+saveRDS(fitted_lasso, "S:/Sepsis-ALI/Data Management/MESSI/xx-archive-projects/NLP imaging impressions/pleural_effusion_fitted_model")
+```
