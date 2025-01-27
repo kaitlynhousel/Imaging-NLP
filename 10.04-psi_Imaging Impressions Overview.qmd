@@ -386,5 +386,5 @@ data_bind %>%
 
 ```{r}
 ## Save model to use for later 
-saveRDS(fitted_lasso, "S:/Sepsis-ALI/Data Management/MESSI/xx-archive-projects/NLP imaging impressions/pleural_effusion_fitted_model")
+saveRDS(fitted_lasso, pleural_effusion_fitted_model")
 ```
